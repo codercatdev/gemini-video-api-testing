@@ -4,6 +4,7 @@
 // use "@google/generative-ai/files"
 import 'dotenv/config';
 import { FunctionCallingMode, GoogleGenerativeAI, HarmBlockThreshold, HarmCategory, SchemaType } from "@google/generative-ai";
+import type { GenerateContentRequest } from "@google/generative-ai";
 import { FileState, GoogleAIFileManager } from "@google/generative-ai/server";
 
 // Initialize the Gemini API client
@@ -16,8 +17,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Choose a Gemini model.
 const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash-lite-preview-02-05",
-  // model: "gemini-1.5-flash",
+  // model: "gemini-2.0-flash-lite-preview-02-05",
+  model: "gemini-1.5-pro",
 });
 
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
@@ -30,17 +31,20 @@ async function analyzeYouTubeVideo() {
   let videoFile = undefined;
 
   // View the response.
-  for (const file of listFilesResponse.files) {
-    console.log(`name: ${file.name} | display name: ${file.displayName}`);
-    videoFile = file;
+  for (const file of listFilesResponse?.files ?? []) {
+    if(file.name === "files/ai-persuasion") {
+      console.log('using existing file', file);
+      videoFile = file;
+    }
   }
 
   if (!videoFile) {
     // Upload the file and specify a display name.
     console.log('Uploading file...')
-    const uploadResponse = await fileManager.uploadFile("./videos/GreatRedSpot.mp4", {
+    const uploadResponse = await fileManager.uploadFile("./videos/video.mp4", {
       mimeType: "video/mp4",
-      displayName: "Jupiter's Great Red Spot",
+      displayName: "AI Persuasion",
+      name: "ai-persuasion",
     });
     // View the response.
     console.log(`Uploaded file ${uploadResponse.file.displayName} as: ${uploadResponse.file.uri}`);
@@ -68,7 +72,8 @@ async function analyzeYouTubeVideo() {
   try {
 
     // Proper request structure
-    const result = await model.generateContent({
+
+    const request: GenerateContentRequest = {
       contents: [{
         role: "user",
         parts: [
@@ -79,7 +84,7 @@ async function analyzeYouTubeVideo() {
             }
           },
           {
-            text: "Make a YouTube title, description and chapters for this video."
+            text: "Make a YouTube title, description, chapters, tags, and a 1000 word blog post in markdown format best for this video including images from the video."
           }
         ]
       }],
@@ -90,11 +95,10 @@ async function analyzeYouTubeVideo() {
         },
       ],
       generationConfig: {
-        // responseMimeType: "application/json",
         temperature: 0.2,
         topK: 1,
         topP: 1,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 4000,
       },
       toolConfig: {
         functionCallingConfig: {
@@ -144,12 +148,44 @@ async function analyzeYouTubeVideo() {
               },
               required: ["chapters"]
             },
-            description: "Extract video chapters with timestamps and titles"
+            description: "Extract max 10 video chapters with timestamps and a unique title based on the content of the video"
+          },
+          {
+            name: "get_tags",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                tags: {
+                  type: SchemaType.ARRAY,
+                  items: {
+                    type: SchemaType.STRING
+                  }
+                }
+              },
+              required: ["tags"]
+            },
+            description: "Extract max 10 video tags best for YouTube"
+          },
+          {
+            name: "get_blog",
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                blog: { type: SchemaType.STRING },
+                paragraphs: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+                images: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } }
+              },
+              required: ["blog", "paragraphs", "images"]
+            },
+            description: "Create at least a 3000+ word blog post in markdown format best for this video including images from the video, in an array of paragraphs and images"
           }]
       }]
-    });
+    };
 
+    const countResult = await model.countTokens(request);
+    console.log(`Token count: ${countResult.totalTokens}`);
 
+    const result = await model.generateContent(request);
     const functions = await result.response.functionCalls();
     
     if(!functions) {  

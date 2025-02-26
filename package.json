@@ -5,10 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "start": "pnpm run build && node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "watch": "tsc-watch --onSuccess \"node dist/index.js\""
+    "start": "node --experimental-transform-types src/index.ts"
   },
   "keywords": [],
   "author": "Alex Patterson",
